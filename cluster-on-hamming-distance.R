@@ -1,15 +1,30 @@
+args <- commandArgs(trailingOnly = TRUE)
+gene_data <- args[1]
+snp_data <- args[2]
+output_file <- args[3]
 options(stringsAsFactors = FALSE)
 
-if (!require("gplots")) {
-  install.packages("gplots", dependencies = TRUE)
-  library(gplots)
-}
-if (!require("RColorBrewer")) {
-  install.packages("RColorBrewer", dependencies = TRUE)
-  library(RColorBrewer)
+#make sure output is svg
+if(tolower(substr(output, nchar(output) - 2, nchar(output))) != "pdf"){
+  warning("not a pdf, prepare for arbitrary file corruption")
 }
 
-heatmap_data <- read.delim("Genes.tsv")
+if(!file.exists(gene_data) || !file.exists(snp_data)){
+  stop("missing files, terminating")
+}
+
+
+list.of.packages <- c("gplots", "RColorBrewer")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages, repos='http://cran.utstat.utoronto.ca/')
+
+#load packages
+library(gplots)
+library(RColorBrewer)
+
+heatmap_data <- read.delim(gene_data)
+input <- read.delim(snp_data)
+
 max_char <- 0
 for(x in heatmap_data$Sample.ID){
   if(nchar(x) > max_char){
@@ -22,10 +37,21 @@ for(x in heatmap_data$Sample.ID){
 #- = red = 4
 for(x in 1:nrow(heatmap_data)){
   if(nchar(heatmap_data$Sample.ID[x]) < max_char){
-    heatmap_data$Sample.ID[x] <- paste(heatmap_data$Sample.ID[x], rep.int(" ", (max_char - nchar(heatmap_data$Sample.ID[x]))), sep = "")
+    some_number <- (max_char - nchar(heatmap_data$Sample.ID[x]))
+    pos <- max(gregexpr("-", heatmap_data$Sample.ID[x], fixed=TRUE)[[1]])
+    
+    first_part <- substr(heatmap_data$Sample.ID[x], 0, pos)
+    filler <- paste(rep.int(0, some_number), collapse = "")
+    last_part <- substr(heatmap_data$Sample.ID[x], pos + 1, nchar(heatmap_data$Sample.ID[x]))
+    
+    heatmap_data$Sample.ID[x] <- paste(first_part, filler, last_part, sep = "")
   }
   
+  
   heatmap_data$Sample.ID[x] <- paste(heatmap_data$MLST[x], heatmap_data$Sample.ID[x] , sep = "     ")
+  if(nchar(heatmap_data$Sample.ID[x] > new_max_char)){
+    new_max_char <- nchar(heatmap_data$Sample.ID[x])
+  }
   
   for(y in 3:ncol(heatmap_data)){
     if(heatmap_data[x,y] == "I"){heatmap_data[x,y] <- 1.5}
@@ -49,7 +75,7 @@ heatmap_data <- heatmap_data[, -1]
 
 for(y in 1:ncol(heatmap_data)){ heatmap_data[, y] <- as.numeric(heatmap_data[,y])}
 
-input <- read.delim("DC_LMC.tab")
+
 
 formatted_input <- input[, c(1:3) * -1]
 rownames(formatted_input) <- paste(input$X.CHROM, input$POS, input$REF, sep = "_")
@@ -66,10 +92,24 @@ for(x in rownames(distance_calc)){
   }
 }
 
+
+
 for(x in 1:nrow(distance_calc)){
+  
   st <- rownames(distance_calc)[x]
   st2 <- gsub(".cat.fasta", "", st)
   st3 <- gsub(".", "-", st2, fixed = TRUE)
+  
+  if(nchar(st3) < max_char){
+    some_number <- (max_char - nchar(st3))
+    pos <- max(gregexpr("-", st3, fixed=TRUE)[[1]])
+    
+    first_part <- substr(st3, 0, pos)
+    filler <- paste(rep.int(0, some_number), collapse = "")
+    last_part <- substr(st3, pos + 1, nchar(st3))
+    
+    st3 <- paste(first_part, filler, last_part, sep = "")
+  }
   
   new_str <- rownames(heatmap_data)[grep(st3, rownames(heatmap_data))]
   rownames(distance_calc)[x] <- new_str
@@ -78,22 +118,17 @@ for(x in 1:nrow(distance_calc)){
 
 distance <- as.dist(distance_calc)
 clustered <- hclust(distance, method = "complete")
+heatmap_data <- t(heatmap_data)
+heatmap_data <- heatmap_data[, rownames(distance_calc)]
 
-pdf("shitty_file.pdf", width = nrow(heatmap_data) * 0.5, height = ncol(heatmap_data) * 0.5 * 2)
-heatmap.2(t(as.matrix(heatmap_data)), 
+pdf(output_file, width = ncol(heatmap_data) * 0.5, height = nrow(heatmap_data) * 0.5)
+heatmap.2(as.matrix(heatmap_data), 
           col = colors, 
-          distfun = NA,
-          hclustfun = NA,
           breaks = categorize, 
-          Colv = as.dendrogram(clustered), 
-          Rowv = FALSE, 
+          Colv = den, 
           dendrogram = "column", 
-          key = FALSE, tracecol = NA, margins=c(8,14), lwid = c(1,12))
+          key = FALSE, tracecol = NA, margins=c(8,14), lwid = c(1,6))
 dev.off()
-
-#pdf(file = "test_out.pdf")
-#plot(clustered)
-#dev.off()
 
 
 
