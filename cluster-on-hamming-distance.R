@@ -125,7 +125,8 @@ pdf(output_file, width = ncol(heatmap_data) * 0.5, height = nrow(heatmap_data) *
 heatmap.2(as.matrix(heatmap_data), 
           col = colors, 
           breaks = categorize, 
-          Colv = den, 
+          Colv = as.dendrogram(clustered), 
+          Rowv = NULL,
           dendrogram = "column", 
           key = FALSE, tracecol = NA, margins=c(8,14), lwid = c(1,6))
 dev.off()
