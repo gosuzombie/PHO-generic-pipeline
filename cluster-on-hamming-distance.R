@@ -116,6 +116,10 @@ for(x in 1:nrow(distance_calc)){
   colnames(distance_calc)[x] <- new_str
 }
 
+if(length(intersect(rownames(heatmap_data), rownames(distance_calc))) != length(rownames(heatmap_data))){
+  warning("snp and heatmap data rownames do not match, prep for arbitrary garbo")
+}
+
 distance <- as.dist(distance_calc)
 clustered <- hclust(distance, method = "complete")
 heatmap_data <- t(heatmap_data)
