@@ -9,8 +9,13 @@ if(tolower(substr(output, nchar(output) - 2, nchar(output))) != "pdf"){
   warning("not a pdf, prepare for arbitrary file corruption")
 }
 
-if(!file.exists(gene_data) || !file.exists(snp_data)){
-  stop("missing files, terminating")
+if(!file.exists(gene_data)){
+  stop("missing gene data, terminated")
+}
+
+if(!file.exists(snp_data)){
+  warning("no snp data, no clustering")
+  snp_data <- NA
 }
 
 
@@ -22,8 +27,14 @@ if(length(new.packages)) install.packages(new.packages, repos='http://cran.utsta
 library(gplots)
 library(RColorBrewer)
 
+
+if(!is.na(snp_data)){
+  input <- read.delim(snp_data)
+}else{ input <- NA}
+
 heatmap_data <- read.delim(gene_data)
-input <- read.delim(snp_data)
+colnames(heatmap_data)[1] <- "Sample.ID"
+heatmap_data$Sample.ID <- as.character(heatmap_data$Sample.ID)
 
 max_char <- 0
 for(x in heatmap_data$Sample.ID){
@@ -31,10 +42,13 @@ for(x in heatmap_data$Sample.ID){
     max_char <- nchar(x)
   }
 }
+
 #I = yellow = 1
 #P = green = 2
 #* = other green = 3
 #- = red = 4
+new_max_char <- max_char
+
 for(x in 1:nrow(heatmap_data)){
   if(nchar(heatmap_data$Sample.ID[x]) < max_char){
     some_number <- (max_char - nchar(heatmap_data$Sample.ID[x]))
@@ -49,15 +63,23 @@ for(x in 1:nrow(heatmap_data)){
   
   
   heatmap_data$Sample.ID[x] <- paste(heatmap_data$MLST[x], heatmap_data$Sample.ID[x] , sep = "     ")
-  if(nchar(heatmap_data$Sample.ID[x] > new_max_char)){
+  if(nchar(heatmap_data$Sample.ID[x]) > new_max_char){
     new_max_char <- nchar(heatmap_data$Sample.ID[x])
   }
   
   for(y in 3:ncol(heatmap_data)){
-    if(heatmap_data[x,y] == "I"){heatmap_data[x,y] <- 1.5}
-    if(heatmap_data[x,y] == "P"){heatmap_data[x,y] <- 2.5}
-    if(heatmap_data[x,y] == "*"){heatmap_data[x,y] <- 3.5}
-    if(heatmap_data[x,y] == "-"){heatmap_data[x,y] <- 4.5}
+    if(as.character(heatmap_data[x,y]) == "I"){
+      heatmap_data[x,y] <- 1.5
+    }
+    else if(as.character(heatmap_data[x,y]) == "P"){
+      heatmap_data[x,y] <- 2.5
+    }
+    else if(as.character(heatmap_data[x,y]) == "S"){
+      heatmap_data[x,y] <- 3.5
+    }
+    else if(as.character(heatmap_data[x,y]) == "-"){
+      heatmap_data[x,y] <- 4.5
+    }
   }
 }
 
@@ -75,61 +97,67 @@ heatmap_data <- heatmap_data[, -1]
 
 for(y in 1:ncol(heatmap_data)){ heatmap_data[, y] <- as.numeric(heatmap_data[,y])}
 
+dendro <- NA
 
-
-formatted_input <- input[, c(1:3) * -1]
-rownames(formatted_input) <- paste(input$X.CHROM, input$POS, input$REF, sep = "_")
-formatted_input <- t(formatted_input)
-formatted_input <- formatted_input[grep("ref", rownames(formatted_input)) * -1, ]
-
-distance_calc <- as.data.frame(matrix(ncol = nrow(formatted_input), nrow = nrow(formatted_input)))
-rownames(distance_calc) <- rownames(formatted_input)
-colnames(distance_calc) <- rownames(formatted_input)
-
-for(x in rownames(distance_calc)){
-  for(y in colnames(distance_calc)){
-    distance_calc[x,y] <- sum(formatted_input[x,] != formatted_input[y,])
-  }
-}
-
-
-
-for(x in 1:nrow(distance_calc)){
+if(!is.na(input)){
   
-  st <- rownames(distance_calc)[x]
-  st2 <- gsub(".cat.fasta", "", st)
-  st3 <- gsub(".", "-", st2, fixed = TRUE)
+  formatted_input <- input[, c(1:3) * -1]
+  rownames(formatted_input) <- paste(input$X.CHROM, input$POS, input$REF, sep = "_")
+  formatted_input <- t(formatted_input)
+  formatted_input <- formatted_input[grep("ref", rownames(formatted_input)) * -1, ]
   
-  if(nchar(st3) < max_char){
-    some_number <- (max_char - nchar(st3))
-    pos <- max(gregexpr("-", st3, fixed=TRUE)[[1]])
-    
-    first_part <- substr(st3, 0, pos)
-    filler <- paste(rep.int(0, some_number), collapse = "")
-    last_part <- substr(st3, pos + 1, nchar(st3))
-    
-    st3 <- paste(first_part, filler, last_part, sep = "")
+  distance_calc <- as.data.frame(matrix(ncol = nrow(formatted_input), nrow = nrow(formatted_input)))
+  rownames(distance_calc) <- rownames(formatted_input)
+  colnames(distance_calc) <- rownames(formatted_input)
+  
+  for(x in rownames(distance_calc)){
+    for(y in colnames(distance_calc)){
+      if(!is.na(distance_calc[x,y])){ next }
+      value <- sum(formatted_input[x,] != formatted_input[y,])
+      distance_calc[x,y] <- distance_calc[y,x] <- value
+    }
   }
   
-  new_str <- rownames(heatmap_data)[grep(st3, rownames(heatmap_data))]
-  rownames(distance_calc)[x] <- new_str
-  colnames(distance_calc)[x] <- new_str
+  distance_calc <- readRDS("distance_matrix.RDS")
+  for(x in 1:nrow(distance_calc)){
+    st <- rownames(distance_calc)[x]
+    st2 <- gsub(".cat.fasta", "", st)
+    st3 <- gsub(".", "-", st2, fixed = TRUE)
+    st3 <- gsub("X", "", st3, fixed = TRUE)
+    
+    if(nchar(st3) < max_char){
+      some_number <- (max_char - nchar(st3))
+      pos <- max(gregexpr("-", st3, fixed=TRUE)[[1]])
+      
+      first_part <- substr(st3, 0, pos)
+      filler <- paste(rep.int(0, some_number), collapse = "")
+      last_part <- substr(st3, pos + 1, nchar(st3))
+      
+      st3 <- paste(first_part, filler, last_part, sep = "")
+    }
+    if(st3 ==  "95-00000000012"){ st3 <- "95-0012_GATCAG"}
+    if(st3 == "95-00000000151"){ st3 <- "95-0151_ACTTGA"}
+    new_str <- rownames(heatmap_data)[grep(st3, rownames(heatmap_data))]
+
+    rownames(distance_calc)[x] <- new_str
+    colnames(distance_calc)[x] <- new_str
+  }
+  
+  if(length(intersect(rownames(heatmap_data), rownames(distance_calc))) != length(rownames(heatmap_data))){
+    warning("snp and heatmap data rownames do not match, prep for arbitrary garbo")
+  }
+  distance <- as.dist(distance_calc)
+  clustered <- hclust(distance, method = "complete")
+  heatmap_data <- t(heatmap_data)
+  heatmap_data <- heatmap_data[, rownames(distance_calc)]
+  dendro <- as.dendrogram(clustered)
 }
 
-if(length(intersect(rownames(heatmap_data), rownames(distance_calc))) != length(rownames(heatmap_data))){
-  warning("snp and heatmap data rownames do not match, prep for arbitrary garbo")
-}
-
-distance <- as.dist(distance_calc)
-clustered <- hclust(distance, method = "complete")
-heatmap_data <- t(heatmap_data)
-heatmap_data <- heatmap_data[, rownames(distance_calc)]
-
-pdf(output_file, width = ncol(heatmap_data) * 0.5, height = nrow(heatmap_data) * 0.5)
+svg(output_file, width = ncol(heatmap_data) * 0.5, height = nrow(heatmap_data) * 0.5)
 heatmap.2(as.matrix(heatmap_data), 
           col = colors, 
           breaks = categorize, 
-          Colv = as.dendrogram(clustered), 
+          Colv = dendro, 
           Rowv = NULL,
           dendrogram = "column", 
           key = FALSE, tracecol = NA, margins=c(8,14), lwid = c(1,6))
